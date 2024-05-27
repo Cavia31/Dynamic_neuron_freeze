@@ -79,7 +79,11 @@ class Trainer():
         return epoch_loss.detach(), test_loss, acc1, acc5
     
     def reset_optim(self):
-        self.optimizer = self.optimizer.__class__(self.model.parameters(), **self.optim_args)
+        if isinstance(self.optimizer, optim.SGD):
+            # Reset the momentum without reseting the lr_scheduler
+            state = self.optimizer.state_dict()
+            state['state'] = {}
+            self.optimizer.load_state_dict(state)
     
     def update_backward_method(self, epoch):
 
