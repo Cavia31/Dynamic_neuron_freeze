@@ -30,12 +30,12 @@ class FreezableConv2dFunction(torch.autograd.Function):
             grad_input = conv2d_input(input.shape, weight, grad_output, ctx.stride, ctx.padding, ctx.dilation, ctx.groups)
         if ctx.needs_input_grad[1]:
             if len(ctx.freeze) > 0:
-                if ctx.groups != 1: #TODO Depthwise convolution with out_channels = input_channels, other sizes of groups will use false sparse backward
-                    #temp_grad = conv2d_weight(input, weight.shape, grad_output, ctx.stride, ctx.padding, ctx.dilation, ctx.groups)
-                    #grad_weight[ctx.freeze] = temp_grad[ctx.freeze]
-                    ctx.groups = len(ctx.freeze)
+                if ctx.groups != 1: #TODO Depthwise convolution with out_channels = input_channels and other sizes of groups will use false sparse backward
+                    temp_grad = conv2d_weight(input, weight.shape, grad_output, ctx.stride, ctx.padding, ctx.dilation, ctx.groups)
+                    grad_weight[ctx.freeze] = temp_grad[ctx.freeze]
+                    #ctx.groups = len(ctx.freeze)
                     # inputs can be separated because this is depthwise convolution (all inputs separated)
-                    grad_weight[ctx.freeze] = conv2d_weight(input[:,ctx.freeze], weight[ctx.freeze].shape, grad_output[:,ctx.freeze], ctx.stride, ctx.padding, ctx.dilation, ctx.groups)
+                    #grad_weight[ctx.freeze] = conv2d_weight(input[:,ctx.freeze], weight[ctx.freeze].shape, grad_output[:,ctx.freeze], ctx.stride, ctx.padding, ctx.dilation, ctx.groups)
                 else:
                     grad_weight[ctx.freeze] = conv2d_weight(input, weight[ctx.freeze].shape, grad_output[:,ctx.freeze], ctx.stride, ctx.padding, ctx.dilation, ctx.groups) 
         if bias is not None and ctx.needs_input_grad[2]:

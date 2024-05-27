@@ -76,12 +76,12 @@ class Trainer():
                     self.lr_scheduler.step()
         return epoch_loss, test_loss, acc1, acc5
     
-    def update_backward_method(self):
-        if isinstance(self.optimizer, optim.SGD): # Zero the momentums because otherwise the parameters keep a velocity
-            state = list(self.optimizer.state.values())
-            for sub_state in state:
-                sub_state['momentum_buffer'] = torch.zeros_like(sub_state['momentum_buffer'], device=sub_state['momentum_buffer'].device)
-
+    def reset_optim(self):
+        self.optimizer =
+    
+    def update_backward_method(self, epoch):
+        if epoch % self.method_config['epoch_change']
+        
         if self.method == "full_random":
             mat,n_unfrozen = self.model.random_freezing_matrix(self.method_config['ratio'])
             self.model.set_freezing_matrix(mat)
@@ -94,7 +94,7 @@ class Trainer():
     def train(self):
         self.model.train()
         for e in range(self.epochs):
-            n_unfrozen = self.update_backward_method()
+            self.n_unfrozen = self.update_backward_method(epoch)
             beg = time()
             loss, test_loss, acc1, acc5 = self.train_step(e)
             end = time()
@@ -104,7 +104,7 @@ class Trainer():
                 'test_loss': test_loss.item(),
                 'acc1': acc1.item(),
                 'acc5': acc5.item(),
-                'unfrozen_neurons': n_unfrozen,
+                'unfrozen_neurons': self.n_unfrozen,
                 'total_params': self.model.get_total_parameters(),
                 'unfrozen_params': self.model.get_unfrozen_parameters(),
                 'epoch_time': end-beg
