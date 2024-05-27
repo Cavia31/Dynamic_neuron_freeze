@@ -6,7 +6,7 @@ seed = 100
 [train]
 epochs = 5
 method = "semi_random" # Select among full_random, semi_random, proportional, velocity, SU
-method_config = {ratio = 1.0}
+method_config = {ratio = 1.0, epoch_change = 1}
 optimizer = "sgd" # Select among sgd, adam
 loss_fn = "cross_entropy" # Select among cross_entropy, mse
 optim_args = {lr = 0.1, momentum = 0.9, weight_decay = 0.0001}
