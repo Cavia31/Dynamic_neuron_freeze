@@ -10,9 +10,12 @@ parser = argparse.ArgumentParser(
 
 parser.add_argument('configfile')
 
-args = parser.parse_args()
+try:
+    args = parser.parse_args()
 
-filepath = args.configfile
+    filepath = args.configfile
+except:
+    filepath = 'config2.toml'
 
 try:
     d = TOMLFile("config/" + filepath).read()

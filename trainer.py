@@ -42,10 +42,12 @@ class Trainer():
 
         if self.method == "semi_random":
             self.freeze = self.model.n_random_freezing_matrixes(self.method_config["ratio"])
+            print(len(self.freeze))
 
         self.result_file = result_file
 
     def train_step(self,epoch):
+        self.model.train()
         epoch_loss = 0.
         n = torch.zeros(1, device=self.device)
         with tqdm(
@@ -74,7 +76,7 @@ class Trainer():
             test_loss, acc1, acc5 = self.test()
             if self.lr_scheduler:
                     self.lr_scheduler.step()
-        return epoch_loss, test_loss, acc1, acc5
+        return epoch_loss.detach(), test_loss, acc1, acc5
     
     def reset_optim(self):
         self.optimizer = self.optimizer.__class__(self.model.parameters(), **self.optim_args)
@@ -88,6 +90,7 @@ class Trainer():
                 print("Changing backward update scheme")
             mat,n_unfrozen = self.model.random_freezing_matrix(self.method_config['ratio'])
             self.model.set_freezing_matrix(mat)
+            self.reset_optim()
             return n_unfrozen
         elif self.method == "semi_random":
             if epoch % self.method_config['epoch_change'] != 0:
@@ -96,6 +99,7 @@ class Trainer():
                 print("Changing backward update scheme")
             i = randint(0, len(self.freeze)-1)
             self.model.set_freezing_matrix(self.freeze[i][0])
+            self.reset_optim()
             return self.freeze[i][1]
 
     def train(self):
