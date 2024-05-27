@@ -14,7 +14,7 @@ from time import time
 
 class Trainer():
 
-    def __init__(self, train_config, model:fnn.FreezableModule, result_file:DictWriter, train_set:DataLoader, test_set:DataLoader, valid_set=None):
+    def __init__(self, train_config, model:fnn.FreezableModule, result_file:DictWriter, train_set:DataLoader, test_set:DataLoader, valid_set=None, device=None):
         self.model = model
         self.train_set = train_set
         self.test_set = test_set
@@ -22,6 +22,9 @@ class Trainer():
         for attr_name in train_config:
             # set attributes such as epochs, optimizer, device, method
             self.__setattr__(attr_name, train_config[attr_name])
+
+        if device:
+            self.device = device
 
         # Put the model in the correct device
         self.model.to(self.device)
@@ -42,9 +45,9 @@ class Trainer():
 
         if self.method == "semi_random":
             self.freeze = self.model.n_random_freezing_matrixes(self.method_config["ratio"])
-            print(len(self.freeze))
 
         self.result_file = result_file
+        print(self.device)
 
     def train_step(self,epoch):
         self.model.train()
