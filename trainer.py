@@ -77,16 +77,23 @@ class Trainer():
         return epoch_loss, test_loss, acc1, acc5
     
     def reset_optim(self):
-        self.optimizer =
+        self.optimizer = self.optimizer.__class__(self.model.parameters(), **self.optim_args)
     
     def update_backward_method(self, epoch):
-        if epoch % self.method_config['epoch_change']
-        
+
         if self.method == "full_random":
+            if epoch % self.method_config['epoch_change'] != 0:
+                return self.n_unfrozen
+            else:
+                print("Changing backward update scheme")
             mat,n_unfrozen = self.model.random_freezing_matrix(self.method_config['ratio'])
             self.model.set_freezing_matrix(mat)
             return n_unfrozen
         elif self.method == "semi_random":
+            if epoch % self.method_config['epoch_change'] != 0:
+                return self.n_unfrozen
+            else:
+                print("Changing backward update scheme")
             i = randint(0, len(self.freeze)-1)
             self.model.set_freezing_matrix(self.freeze[i][0])
             return self.freeze[i][1]
@@ -94,7 +101,7 @@ class Trainer():
     def train(self):
         self.model.train()
         for e in range(self.epochs):
-            self.n_unfrozen = self.update_backward_method(epoch)
+            self.n_unfrozen = self.update_backward_method(e)
             beg = time()
             loss, test_loss, acc1, acc5 = self.train_step(e)
             end = time()

@@ -1,0 +1,1 @@
+epoch,train_loss,test_loss,acc1,acc5,unfrozen_neurons,total_params,unfrozen_params,epoch_time
