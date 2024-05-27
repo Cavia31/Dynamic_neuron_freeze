@@ -1,0 +1,4 @@
+mbv2 cifar10 (pretrained on ImageNet or from scratch)
+1-5: semi-random scratch 100% 50% 20% 10% 5%
+6-9: full-random scratch 100% 50% 20% 10% 5%
+10-14: semi-random pretrained 100% 50% 20% 10% 5%

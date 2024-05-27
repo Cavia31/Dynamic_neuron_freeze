@@ -300,16 +300,18 @@ class FreezableModule(nn.Module):
                 ratio (float): the ratio of frozen neurons to be set (float between 0. and 1.)
         """
         neuron_list = self._neuron_list()
-        sampled_list = sample(neuron_list, int(len(neuron_list)*ratio))
+        n_unfrozen = int(len(neuron_list)*ratio)
+        sampled_list = sample(neuron_list, n_unfrozen)
         freezing_matrix = self.get_empty_freezing_matrix()
         for key,neuron in sampled_list:
             key_parts = key.split('-')
             FreezableModule._build_freezing_matrix(freezing_matrix, key_parts, neuron, order=order)            
-        return freezing_matrix
+        return freezing_matrix, n_unfrozen
     
     def n_random_freezing_matrixes(self, ratio, order=True):
         """
-        Returns a random freezing matrix to be used to freeze neurons of the module this method is called on.
+        Returns a list of tuples containing a freezing matrix and the number of active neurons for this matrix.
+        The matrixes in the list cover all the neurons of the model.
             Args:
                 ratio (float): the ratio of frozen neurons to be set (float between 0. and 1.)
         """
@@ -328,7 +330,7 @@ class FreezableModule(nn.Module):
                 key,neuron = elem
                 key_parts = key.split('-')
                 FreezableModule._build_freezing_matrix(freezing_matrix, key_parts, neuron, order=order)
-            freezing_matrixes.append(freezing_matrix)
+            freezing_matrixes.append((freezing_matrix,len(sampled_list)))
         # Build the last matrix, possibly smaller than the other ones
         sampled_list = neuron_list
         freezing_matrix = self.get_empty_freezing_matrix()
@@ -336,7 +338,7 @@ class FreezableModule(nn.Module):
             key,neuron = elem
             key_parts = key.split('-')
             FreezableModule._build_freezing_matrix(freezing_matrix, key_parts, neuron, order=order)
-        freezing_matrixes.append(freezing_matrix)
+        freezing_matrixes.append((freezing_matrix,len(sampled_list)))
         return freezing_matrixes
 
     def n_proportional_matrixes(self, ratio, order=True):
