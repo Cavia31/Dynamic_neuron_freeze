@@ -44,7 +44,10 @@ class Trainer():
             self.loss_fn = F.mse_loss
 
         if self.method == "semi_random":
-            self.freeze = self.model.n_random_freezing_matrixes(self.method_config["ratio"])
+            self.freeze = self.model.n_random_freezing_matrices(self.method_config["ratio"])
+        elif self.method == "proportional":
+            self.freeze = self.model.n_proportional_matrices(self.method_config["ratio"])
+            self.i = 0
 
         self.result_file = result_file
         print(self.device)
@@ -108,6 +111,16 @@ class Trainer():
             self.model.set_freezing_matrix(self.freeze[i][0])
             self.reset_optim()
             return self.freeze[i][1]
+        elif self.method == "proportional":
+            if epoch % self.method_config['epoch_change'] != 0:
+                return self.n_unfrozen
+            else:
+                print("Changing backward update scheme")
+            self.model.set_freezing_matrix(self.freeze[self.i][0])
+            uf = self.freeze[self.i][1]
+            self.i = (self.i + 1)%len(self.freeze)
+            self.reset_optim()
+            return uf
 
     def train(self):
         self.model.train()

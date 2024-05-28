@@ -43,9 +43,10 @@ class FreezableConv2d(nn.Conv2d):
     def get_default_freeze(self):
         return list(range(self.output_features))
     
-    def get_new_freeze(self, ratio):
-        k = max(1, int(self.output_features*ratio))
-        return sample(self.get_default_freeze(), k)
+    def get_proportinal_freeze(self, n):
+        f = self.get_default_freeze()
+        k, m = divmod(self.output_features, n)
+        return (f[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n))
 
     def get_total_parameters(self) -> int:
         s = self.weight.size()
@@ -90,9 +91,10 @@ class FreezableLinear(nn.Linear):
     def get_default_freeze(self):
         return list(range(self.output_features))
 
-    def get_new_freeze(self, ratio):
-        k = max(1, int(self.output_features*ratio))
-        return sample(self.get_default_freeze(), k)
+    def get_proportinal_freeze(self, n):
+        f = self.get_default_freeze()
+        k, m = divmod(self.output_features, n)
+        return (f[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n))
 
     def get_total_parameters(self) -> int:
         s = self.weight.size()
@@ -308,10 +310,10 @@ class FreezableModule(nn.Module):
             FreezableModule._build_freezing_matrix(freezing_matrix, key_parts, neuron, order=order)            
         return freezing_matrix, n_unfrozen
     
-    def n_random_freezing_matrixes(self, ratio, order=True):
+    def n_random_freezing_matrices(self, ratio, order=True):
         """
         Returns a list of tuples containing a freezing matrix and the number of active neurons for this matrix.
-        The matrixes in the list cover all the neurons of the model.
+        The matrices in the list cover all the neurons of the model.
             Args:
                 ratio (float): the ratio of frozen neurons to be set (float between 0. and 1.)
         """
@@ -320,8 +322,8 @@ class FreezableModule(nn.Module):
         # Get the number of neurons, and the size of a sample with respect to the ratio
         freezable_neurons = len(neuron_list)
         step_size = int(freezable_neurons*ratio)
-        freezing_matrixes = []
-        # Sample the neurons, and build the freezing matrixes
+        freezing_matrices = []
+        # Sample the neurons, and build the freezing matrices
         while len(neuron_list) > step_size:
             sampled_list = sample(neuron_list, int(freezable_neurons*ratio))
             freezing_matrix = self.get_empty_freezing_matrix()
@@ -330,7 +332,7 @@ class FreezableModule(nn.Module):
                 key,neuron = elem
                 key_parts = key.split('-')
                 FreezableModule._build_freezing_matrix(freezing_matrix, key_parts, neuron, order=order)
-            freezing_matrixes.append((freezing_matrix,len(sampled_list)))
+            freezing_matrices.append((freezing_matrix,len(sampled_list)))
         # Build the last matrix, possibly smaller than the other ones
         sampled_list = neuron_list
         freezing_matrix = self.get_empty_freezing_matrix()
@@ -338,9 +340,32 @@ class FreezableModule(nn.Module):
             key,neuron = elem
             key_parts = key.split('-')
             FreezableModule._build_freezing_matrix(freezing_matrix, key_parts, neuron, order=order)
-        freezing_matrixes.append((freezing_matrix,len(sampled_list)))
-        return freezing_matrixes
+        freezing_matrices.append((freezing_matrix,len(sampled_list)))
+        return freezing_matrices
 
-    def n_proportional_matrixes(self, ratio, order=True):
-        matrix = []
+    def n_proportional_matrices(self, ratio):
+        n = int(round(1/ratio))
+        print("building " + str(n) + " proportional matrices")
+        freezing_matrices = [[self.get_empty_freezing_matrix(),0] for _ in range(n)]
+        base_matrix = self.get_default_freezing_matrix()
+        
+        def split(a, n):
+            k, m = divmod(len(a), n)
+            return [a[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n)]
+        
+        def change_field(d1:dict, d2:dict, i):
+            for k in d1:
+                if isinstance(d1[k], dict):
+                    change_field(d1[k],  d2[k], i)
+                else:
+                    l = split(d2[k], n)[i]
+                    d1[k] = l
+                    freezing_matrices[i][1] += len(l)
+                    
+        for i in range(n):
+            change_field(freezing_matrices[i][0], base_matrix, i)
+        
+        return freezing_matrices
+        
+        
 

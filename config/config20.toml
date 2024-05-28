@@ -1,16 +1,16 @@
 [model]
 model = "mbv2" # Select among AlexNet, mbv2, resnet18, resnet50, mcunet
-weights = "pretrained" # Select among pretrained, scratch
+weights = "scratch" # Select among pretrained, scratch
 seed = 100
 
 [train]
-epochs = 150
+epochs = 300
 method = "proportional" # Select among full_random, semi_random, proportional, velocity, SU
-method_config = {ratio = 0.5, epoch_change = 5}
+method_config = {ratio = 0.2, epoch_change = 5}
 optimizer = "sgd" # Select among sgd, adam
 loss_fn = "cross_entropy" # Select among cross_entropy, mse
-optim_args = {lr = 0.001, momentum = 0.9, weight_decay = 0.0001}
-scheduler_args = {milestones = [100], gamma = 0.1}
+optim_args = {lr = 0.1, momentum = 0.9, weight_decay = 0.0001}
+scheduler_args = {milestones = [150,250], gamma = 0.1}
 device = "cuda"
 
 [dataset]
