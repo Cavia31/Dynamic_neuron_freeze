@@ -15,6 +15,11 @@ class FreezableConv2d(nn.Conv2d):
         self.stride = stride
         self.dilation = dilation
         self.groups = groups
+        self.neq = False
+        self.last_output = None
+        self.last_cosim = None
+        self.velocities = torch.ones(output_features)
+        self.neq_momentum = 0
         # a dict may not be necessary as NEq updates this each epoch... 
         # will investigate once everything works
         self.freeze = list(range(output_features))
@@ -29,7 +34,25 @@ class FreezableConv2d(nn.Conv2d):
         self.reset_parameters()
 
     def forward(self, input):
-        return bwf.FreezableConv2dFunction.apply(input, self.weight, self.bias, self.freeze, self.padding, self.stride, self.dilation, self.groups)
+        if not self.neq:
+            return bwf.FreezableConv2dFunction.apply(input, self.weight, self.bias, self.freeze, self.padding, self.stride, self.dilation, self.groups)
+        else:
+            y = bwf.FreezableConv2dFunction.apply(input, self.weight, self.bias, self.freeze, self.padding, self.stride, self.dilation, self.groups)
+            yn = y.detach()
+            yn = (yn/yn.norm()).flatten(start_dim=2)
+            if self.last_output is None:
+                self.last_output = yn
+                return y
+            cosim = F.cosine_similarity(yn, self.last_output, dim=2).sum(dim=0) #compute the cosim over the flattened vector, and sum over the batch
+            self.last_output = yn
+            if self.last_cosim is None:
+                self.last_cosim = cosim
+                return y
+            delta = cosim - self.last_cosim
+            self.last_cosim = cosim
+            self.velocities.to(delta.device)
+            self.velocities = delta - self.neq_momentum*self.velocities.to(delta.device)
+            return y     
 
     def extra_repr(self):
         return f'input_features={self.input_features}, output_features={self.output_features}, bias={self.bias is not None}'
@@ -57,12 +80,24 @@ class FreezableConv2d(nn.Conv2d):
         s = self.weight.size()
         sb = 0 if self.bias is None else self.bias.size()[0]
         return len(self.freeze)*s[1]*s[2]*s[3] + sb
+    
+    def update_neq_freeze(self, eps):
+        self.freeze = []
+        for i in range(self.output_features):
+            if abs(self.velocities[i].item()) >= eps:
+                self.freeze.append(i)
+        return len(self.freeze)
 
 class FreezableLinear(nn.Linear):
     def __init__(self, input_features, output_features, bias=True):
         super(FreezableLinear, self).__init__(input_features, output_features, bias)
         self.input_features = input_features
         self.output_features = output_features
+        self.neq = False
+        self.last_output = None
+        self.last_cosim = None
+        self.velocities = torch.ones(output_features)
+        self.neq_momentum = 0
         # a dict may not be necessary as NEq updates this each epoch... 
         # will investigate once everything works
         self.freeze = list(range(output_features))
@@ -77,8 +112,25 @@ class FreezableLinear(nn.Linear):
         self.reset_parameters()
 
     def forward(self, input):
-        return bwf.FreezableLinearFunction.apply(input, self.weight, self.bias, self.freeze)
-
+        if not self.neq:
+            return bwf.FreezableLinearFunction.apply(input, self.weight, self.bias, self.freeze)
+        else:
+            y = bwf.FreezableLinearFunction.apply(input, self.weight, self.bias, self.freeze)
+            yn = y.detach()
+            yn = (yn/yn.norm()).reshape(yn.shape[0], yn.shape[1], 1)
+            if self.last_output is None:
+                self.last_output = yn
+                return y
+            cosim = F.cosine_similarity(yn, self.last_output, dim=2).sum(0) #compute the cosim
+            self.last_output = yn
+            if self.last_cosim is None:
+                self.last_cosim = cosim
+                return y
+            delta = cosim - self.last_cosim
+            self.last_cosim = cosim
+            self.velocities = delta - self.neq_momentum*self.velocities.to(delta.device)
+            return y
+        
     def extra_repr(self):
         return f'input_features={self.input_features}, output_features={self.output_features}, bias={self.bias is not None}' 
     
@@ -105,6 +157,13 @@ class FreezableLinear(nn.Linear):
         s = self.weight.size()
         sb = 0 if self.bias is None else self.bias.size()[0]
         return len(self.freeze)*s[1] + sb
+    
+    def update_neq_freeze(self, eps):
+        self.freeze = []
+        for i in range(self.output_features):
+            if abs(self.velocities[i].item()) >= eps:
+                self.freeze.append(i)
+        return len(self.freeze)
 
 
 class SequentialF(nn.Sequential):
@@ -188,6 +247,37 @@ class SequentialF(nn.Sequential):
             elif isinstance(module[1],SequentialF):
                 neuron_list.extend(module[1]._neuron_list(extended_name+module[0]+"-"))
         return neuron_list
+    
+    def neq_mode(self, b=True, mu=None):
+        if b:
+            self.eval()
+        for module in self.named_children():
+            if isinstance(module[1], FreezableConv2d):
+                module[1].neq = b
+                if mu:
+                    module[1].neq_momentum = mu
+            elif isinstance(module[1], FreezableLinear):
+                module[1].neq = b
+                if mu:
+                    module[1].neq_momentum = mu
+            elif isinstance(module[1], FreezableModule):
+                module[1].neq_mode(b,mu)
+            elif isinstance(module[1], SequentialF):
+                module[1].neq_mode(b,mu)
+                
+    def update_neq(self, eps):
+        total = 0
+        for module in self.named_children():
+            if isinstance(module[1], FreezableConv2d):
+                total += module[1].update_neq_freeze(eps)
+            elif isinstance(module[1], FreezableLinear):
+                total += module[1].update_neq_freeze(eps)
+            elif isinstance(module[1], FreezableModule):
+                total += module[1].update_neq(eps)
+            elif isinstance(module[1], SequentialF):
+                total += module[1].update_neq(eps)
+        return total
+        
     
     
 class FreezableModule(nn.Module):
@@ -366,6 +456,34 @@ class FreezableModule(nn.Module):
             change_field(freezing_matrices[i][0], base_matrix, i)
         
         return freezing_matrices
+    
+    def neq_mode(self, b=True, mu=None):
+        if b:
+            self.eval()
+        for module in self.named_children():
+            if isinstance(module[1], FreezableConv2d):
+                module[1].neq = b
+                if mu:
+                    module[1].neq_momentum = mu
+            elif isinstance(module[1], FreezableLinear):
+                module[1].neq = b
+                if mu:
+                    module[1].neq_momentum = mu
+            elif isinstance(module[1], FreezableModule):
+                module[1].neq_mode(b,mu)
+            elif isinstance(module[1], SequentialF):
+                module[1].neq_mode(b,mu)
         
-        
+    def update_neq(self, eps):
+        total = 0
+        for module in self.named_children():
+            if isinstance(module[1], FreezableConv2d):
+                total += module[1].update_neq_freeze(eps)
+            elif isinstance(module[1], FreezableLinear):
+                total += module[1].update_neq_freeze(eps)
+            elif isinstance(module[1], FreezableModule):
+                total += module[1].update_neq(eps)
+            elif isinstance(module[1], SequentialF):
+                total += module[1].update_neq(eps)
+        return total
 

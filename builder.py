@@ -61,6 +61,9 @@ class Builder():
                 'train': datasets.CIFAR100("./datasets/CIFAR100", train=True, transform=train_transform, download=True),
                 'test': datasets.CIFAR100("./datasets/CIFAR100", train=False, transform=test_transform, download=True)
             }
+            
+        self.n_classes = len(self.dataset['train'].classes)
+        self.classes = self.dataset['train'].classes
         
         if self.valid:
             train_len = int(len(self.dataset['train'])) - self.valid_len
@@ -75,11 +78,7 @@ class Builder():
             'test': DataLoader(dataset=self.dataset['test'], batch_size=self.batch_size, shuffle=False)
         }
         if self.valid:
-            self.dataloader['valid'] = DataLoader(dataset=self.dataset['valid'], batch_size=self.batch_size, shuffle=True)
-        
-        self.n_classes = len(self.dataset['train'].classes)
-        self.classes = self.dataset['train'].classes
-
+            self.dataloader['valid'] = DataLoader(dataset=self.dataset['valid'], batch_size=min(self.batch_size,self.valid_len), shuffle=False)
 
         # Initialize the model
         self.model_name = self.model

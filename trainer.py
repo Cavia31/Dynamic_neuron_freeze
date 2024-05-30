@@ -48,6 +48,8 @@ class Trainer():
         elif self.method == "proportional":
             self.freeze = self.model.n_proportional_matrices(self.method_config["ratio"])
             self.i = 0
+        elif self.method == "velocity":
+            self.model.neq_mode(False, torch.tensor(self.method_config["momentum"], device=device))
 
         self.result_file = result_file
         print(self.device)
@@ -121,6 +123,15 @@ class Trainer():
             self.i = (self.i + 1)%len(self.freeze)
             self.reset_optim()
             return uf
+        elif self.method == "velocity":
+            if epoch % self.method_config['epoch_change'] != 0:
+                return self.n_unfrozen
+            else:
+                print("Changing backward update scheme")
+            self.valid()
+            n_unfrozen = self.model.update_neq(self.method_config['eps'])
+            self.reset_optim()
+            return n_unfrozen
 
     def train(self):
         self.model.train()
@@ -167,4 +178,31 @@ class Trainer():
                 test_loss /= len(self.test_set)
                 acc1 /= len(self.test_set)
                 acc5 /= len(self.test_set)
+        return test_loss.detach(), acc1, acc5
+
+    def valid(self):
+        self.model.neq_mode(True)
+        test_loss = 0
+        acc1,acc5 = 0,0
+        with tqdm(
+            total=len(self.valid_set),
+            desc="Validation"
+        ) as t:
+            with torch.no_grad():
+                for data, target in self.valid_set:
+                    data = data.to(self.device)
+                    target = target.to(self.device)
+                    
+                    haty = self.model(data)
+
+                    test_loss += self.loss_fn(haty, target)
+                    dacc1,dacc5 = accuracy(haty, target, (1,5))
+                    acc1 += dacc1
+                    acc5 += dacc5
+
+                    t.update()
+                test_loss /= len(self.valid_set)
+                acc1 /= len(self.valid_set)
+                acc5 /= len(self.valid_set)
+        self.model.neq_mode(False)
         return test_loss.detach(), acc1, acc5

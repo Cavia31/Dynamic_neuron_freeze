@@ -5,8 +5,8 @@ seed = 100
 
 [train]
 epochs = 300
-method = "velocity" # Select among full_random, semi_random, proportional, velocity, SU
-method_config = {eps = 1e-2, momentum = 0.5, epoch_change = 1}
+method = "full_random" # Select among full_random, semi_random, proportional, velocity, SU
+method_config = {ratio = 0.05, epoch_change = 1}
 optimizer = "sgd" # Select among sgd, adam
 loss_fn = "cross_entropy" # Select among cross_entropy, mse
 optim_args = {lr = 0.1, momentum = 0.9, weight_decay = 0.0001}
@@ -16,5 +16,5 @@ device = "cuda"
 [dataset]
 dataset = "c10" # Select among c10, c100, mnist
 batch_size = 100
-valid = true
-valid_len = 50
+valid = false
+valid_len = 10

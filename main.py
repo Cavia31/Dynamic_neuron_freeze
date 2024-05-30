@@ -36,6 +36,9 @@ b = Builder(d["model"], d["dataset"])
 with open("runs/results_" + filepath.split('.')[0] + ".csv", "w", newline='') as csv:
     dwriter = DictWriter(csv, fieldnames=['epoch','train_loss','test_loss','acc1','acc5','unfrozen_neurons','total_params','unfrozen_params','epoch_time'])
     dwriter.writeheader()
-
-    t = Trainer(d["train"], b.model, dwriter, b.dataloader["train"], b.dataloader["test"], device=device)
+    
+    if "valid" in b.dataloader:
+        t = Trainer(d["train"], b.model, dwriter, b.dataloader["train"], b.dataloader["test"], valid_set=b.dataloader["valid"], device=device)
+    else:
+        t = Trainer(d["train"], b.model, dwriter, b.dataloader["train"], b.dataloader["test"], device=device)
     t.train()
