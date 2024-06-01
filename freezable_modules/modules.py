@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import freezable_modules.bw_functions as bwf
 from random import sample
+from utils import normalize_output
 
 class FreezableConv2d(nn.Conv2d):
     def __init__(self, input_features, output_features, kernel_size1, kernel_size2, bias=True, padding=0, stride=1, dilation=1, groups=1):
@@ -39,18 +40,17 @@ class FreezableConv2d(nn.Conv2d):
         else:
             y = bwf.FreezableConv2dFunction.apply(input, self.weight, self.bias, self.freeze, self.padding, self.stride, self.dilation, self.groups)
             yn = y.detach()
-            yn = (yn/yn.norm()).flatten(start_dim=2)
+            yn = normalize_output(yn)
             if self.last_output is None:
                 self.last_output = yn
                 return y
-            cosim = F.cosine_similarity(yn, self.last_output, dim=2).sum(dim=0) #compute the cosim over the flattened vector, and sum over the batch
+            cosim = (yn*self.last_output).sum(dim=1) #compute the cosim over the flattened vector, and sum over the batch
             self.last_output = yn
             if self.last_cosim is None:
                 self.last_cosim = cosim
                 return y
             delta = cosim - self.last_cosim
             self.last_cosim = cosim
-            self.velocities.to(delta.device)
             self.velocities = delta - self.neq_momentum*self.velocities.to(delta.device)
             return y     
 
@@ -80,6 +80,11 @@ class FreezableConv2d(nn.Conv2d):
         s = self.weight.size()
         sb = 0 if self.bias is None else self.bias.size()[0]
         return len(self.freeze)*s[1]*s[2]*s[3] + sb
+    
+    def get_param_per_neuron(self) -> int:
+        s = self.weight.size()
+        sb = 0 if self.bias is None else 1
+        return s[1]*s[2]*s[3] + sb
     
     def update_neq_freeze(self, eps):
         self.freeze = []
@@ -117,11 +122,11 @@ class FreezableLinear(nn.Linear):
         else:
             y = bwf.FreezableLinearFunction.apply(input, self.weight, self.bias, self.freeze)
             yn = y.detach()
-            yn = (yn/yn.norm()).reshape(yn.shape[0], yn.shape[1], 1)
+            yn = normalize_output(yn)
             if self.last_output is None:
                 self.last_output = yn
                 return y
-            cosim = F.cosine_similarity(yn, self.last_output, dim=2).sum(0) #compute the cosim
+            cosim = (yn*self.last_output).sum(dim=1) #compute the cosim
             self.last_output = yn
             if self.last_cosim is None:
                 self.last_cosim = cosim
@@ -157,6 +162,11 @@ class FreezableLinear(nn.Linear):
         s = self.weight.size()
         sb = 0 if self.bias is None else self.bias.size()[0]
         return len(self.freeze)*s[1] + sb
+    
+    def get_param_per_neuron(self) -> int:
+        s = self.weight.size()
+        sb = 0 if self.bias is None else 1
+        return s[1] + sb
     
     def update_neq_freeze(self, eps):
         self.freeze = []
@@ -247,6 +257,28 @@ class SequentialF(nn.Sequential):
             elif isinstance(module[1],SequentialF):
                 neuron_list.extend(module[1]._neuron_list(extended_name+module[0]+"-"))
         return neuron_list
+    
+    def _neuron_list_with_velocities(self, extended_name=""):
+        neuron_list = []
+        velocities = torch.tensor([])
+        for module in self.named_children():
+            if isinstance(module[1],FreezableConv2d):
+                for neuron in range(module[1].output_features):
+                    neuron_list.append((extended_name+module[0],neuron,module[1].get_param_per_neuron()))
+                velocities = torch.cat((velocities, module[1].velocities.cpu()))
+            elif isinstance(module[1],FreezableLinear):
+                for neuron in range(module[1].output_features):
+                    neuron_list.append((extended_name+module[0],neuron,module[1].get_param_per_neuron()))
+                velocities = torch.cat((velocities, module[1].velocities.cpu()))
+            elif isinstance(module[1],FreezableModule):
+                n_list, v_tensor = module[1]._neuron_list_with_velocities(extended_name+module[0]+"-")
+                neuron_list.extend(n_list)
+                velocities = torch.cat((velocities, v_tensor))
+            elif isinstance(module[1],SequentialF):
+                n_list, v_tensor = module[1]._neuron_list_with_velocities(extended_name+module[0]+"-")
+                neuron_list.extend(n_list)
+                velocities = torch.cat((velocities, v_tensor))
+        return neuron_list, velocities
     
     def neq_mode(self, b=True, mu=None):
         if b:
@@ -384,6 +416,28 @@ class FreezableModule(nn.Module):
                     matrix[key].sort()
         else:
             return
+        
+    def _neuron_list_with_velocities(self, extended_name=""):
+        neuron_list = []
+        velocities = torch.tensor([])
+        for module in self.named_children():
+            if isinstance(module[1],FreezableConv2d):
+                for neuron in range(module[1].output_features):
+                    neuron_list.append((extended_name+module[0],neuron,module[1].get_param_per_neuron()))
+                velocities = torch.cat((velocities, module[1].velocities.cpu()))
+            elif isinstance(module[1],FreezableLinear):
+                for neuron in range(module[1].output_features):
+                    neuron_list.append((extended_name+module[0],neuron,module[1].get_param_per_neuron()))
+                velocities = torch.cat((velocities, module[1].velocities.cpu()))
+            elif isinstance(module[1],FreezableModule):
+                n_list, v_tensor = module[1]._neuron_list_with_velocities(extended_name+module[0]+"-")
+                neuron_list.extend(n_list)
+                velocities = torch.cat((velocities, v_tensor))
+            elif isinstance(module[1],SequentialF):
+                n_list, v_tensor = module[1]._neuron_list_with_velocities(extended_name+module[0]+"-")
+                neuron_list.extend(n_list)
+                velocities = torch.cat((velocities, v_tensor))
+        return neuron_list, velocities
     
     def random_freezing_matrix(self, ratio, order=True):
         """
@@ -486,4 +540,33 @@ class FreezableModule(nn.Module):
             elif isinstance(module[1], SequentialF):
                 total += module[1].update_neq(eps)
         return total
+    
+    def velocity_freezing_matrix(self, ratio, order=True):
+        """
+        Returns a freezing matrix using velocity as a metric to sort neurons. After beeing sorted, the neurons are added to the matrix
+        as long as their parameters fit in the budget.
+            Args:
+                ratio (float): the ratio of frozen neurons to be set (float between 0. and 1.)
+        """
+        neuron_list, velocities = self._neuron_list_with_velocities()
+        n_unfrozen = 0
+        max_param = int(self.get_total_parameters()*ratio)
+        vel,indices = torch.sort(torch.abs(velocities), descending=True)
+        sorted_neurons = []
+        for i in range(len(neuron_list)):
+            print(vel[i].item())
+            if abs(vel[i].item()) > 1:
+                raise Exception
+            idx = indices[i].item()
+            sorted_neurons.append(neuron_list[idx])
+        freezing_matrix = self.get_empty_freezing_matrix()
+        n_params = 0
+        for key,neuron,params in sorted_neurons:
+            if n_params+params > max_param:
+                continue
+            n_params += params
+            n_unfrozen += 1
+            key_parts = key.split('-')
+            FreezableModule._build_freezing_matrix(freezing_matrix, key_parts, neuron, order=order)            
+        return freezing_matrix, n_unfrozen
 

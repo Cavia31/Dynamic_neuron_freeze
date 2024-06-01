@@ -129,7 +129,11 @@ class Trainer():
             else:
                 print("Changing backward update scheme")
             self.valid()
-            n_unfrozen = self.model.update_neq(self.method_config['eps'])
+            if 'ratio' in self.method_config:
+                matrix, n_unfrozen = self.model.velocity_freezing_matrix(self.method_config['ratio'])
+                self.model.set_freezing_matrix(matrix)
+            elif 'eps' in self.method_config:
+                n_unfrozen = self.model.update_neq(self.method_config['eps'])
             self.reset_optim()
             return n_unfrozen
 

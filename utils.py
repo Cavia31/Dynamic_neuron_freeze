@@ -1,4 +1,5 @@
 import torch
+from torch.linalg import norm
 
 def accuracy(output: torch.Tensor, target: torch.Tensor, topk=(1,)):
     r"""
@@ -19,3 +20,10 @@ def accuracy(output: torch.Tensor, target: torch.Tensor, topk=(1,)):
         else:
             res.append(torch.zeros(1, device=target.device) - 1.0)
     return res
+
+def normalize_output(y:torch.Tensor):
+    y = y.swapaxes(0,1)
+    y = y.flatten(1)
+    n = norm(y, 1, 1, keepdim=True)
+    y = y/n
+    return y
