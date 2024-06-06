@@ -26,4 +26,5 @@ def normalize_output(y:torch.Tensor):
     y = y.flatten(1)
     n = norm(y, 1, 1, keepdim=True)
     y = y/n
+    y = y.nan_to_num(nan=0.0) # if an element is 0 and its vector's norm is 0, it would be nan, so we set it back to 0
     return y

@@ -19,7 +19,7 @@ class FreezableConv2d(nn.Conv2d):
         self.neq = False
         self.last_output = None
         self.last_cosim = None
-        self.velocities = torch.ones(output_features)
+        self.velocities = torch.zeros(output_features)
         self.neq_momentum = 0
         # a dict may not be necessary as NEq updates this each epoch... 
         # will investigate once everything works
@@ -101,7 +101,7 @@ class FreezableLinear(nn.Linear):
         self.neq = False
         self.last_output = None
         self.last_cosim = None
-        self.velocities = torch.ones(output_features)
+        self.velocities = torch.zeros(output_features)
         self.neq_momentum = 0
         # a dict may not be necessary as NEq updates this each epoch... 
         # will investigate once everything works
@@ -309,6 +309,19 @@ class SequentialF(nn.Sequential):
             elif isinstance(module[1], SequentialF):
                 total += module[1].update_neq(eps)
         return total
+    
+    def get_group_velocity(self, freezing_matrix:dict):
+        total_velocity = 0
+        for module in self.named_children():
+            if isinstance(module[1], FreezableConv2d):
+                total_velocity += torch.sum(module[1].velocities[freezing_matrix.get(module[0])]).item()
+            elif isinstance(module[1], FreezableLinear):
+                total_velocity += torch.sum(module[1].velocities[freezing_matrix.get(module[0])]).item()
+            elif isinstance(module[1], SequentialF):
+                total_velocity += module[1].get_group_velocity(freezing_matrix.get(module[0]))
+            elif isinstance(module[1], FreezableModule):
+                total_velocity += module[1].get_group_velocity(freezing_matrix.get(module[0]))
+        return total_velocity
         
     
     
@@ -554,9 +567,6 @@ class FreezableModule(nn.Module):
         vel,indices = torch.sort(torch.abs(velocities), descending=True)
         sorted_neurons = []
         for i in range(len(neuron_list)):
-            print(vel[i].item())
-            if abs(vel[i].item()) > 1:
-                raise Exception
             idx = indices[i].item()
             sorted_neurons.append(neuron_list[idx])
         freezing_matrix = self.get_empty_freezing_matrix()
@@ -570,3 +580,24 @@ class FreezableModule(nn.Module):
             FreezableModule._build_freezing_matrix(freezing_matrix, key_parts, neuron, order=order)            
         return freezing_matrix, n_unfrozen
 
+    def get_group_velocity(self, freezing_matrix:dict):
+        total_velocity = 0
+        for module in self.named_children():
+            if isinstance(module[1], FreezableConv2d):
+                total_velocity += torch.sum(module[1].velocities[freezing_matrix.get(module[0])]).item()
+            elif isinstance(module[1], FreezableLinear):
+                total_velocity += torch.sum(module[1].velocities[freezing_matrix.get(module[0])]).item()
+            elif isinstance(module[1], SequentialF):
+                total_velocity += module[1].get_group_velocity(freezing_matrix.get(module[0]))
+            elif isinstance(module[1], FreezableModule):
+                total_velocity += module[1].get_group_velocity(freezing_matrix.get(module[0]))
+        return total_velocity
+
+    def update_group_velocity(self, freezing_matrices):
+        velocities = []
+        for elem in freezing_matrices:
+            mat,n_unfrozen = elem
+            velocities.append(abs(self.get_group_velocity(mat)/n_unfrozen))
+        idx = torch.argmax(torch.tensor(velocities)).item()
+        return freezing_matrices[idx][0], freezing_matrices[idx][1], idx, velocities
+        

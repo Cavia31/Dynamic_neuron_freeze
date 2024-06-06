@@ -51,7 +51,7 @@ class FreezableConv2d(nn.Module):
             self.freezing_matrix = torch.full((in_channels//groups,out_channels), True, dtype=bool)
         
         # Generate the kernels (separated so the flag requires_grad can be set up individually)
-        self.kernels = nn.ParameterList([nn.ParameterList([nn.Parameter(torch.randn(kernel_size), requires_grad=bool(self.freezing_matrix[i,j])) for j in range(out_channels)]) for i in range(in_channels//groups)])
+        self.neurons = nn.ParameterList([nn.Parameter(torch.randn((1,in_channels//groups,kernel_size[0],kernel_size[0])), requires_grad=True) for _ in range(out_channels)])
 
         # Generate bias (always trained)
         if bias:
@@ -60,12 +60,11 @@ class FreezableConv2d(nn.Module):
             self.bias = None #[torch.zeros(1) for _ in range(out_channels)]
 
     def forward(self, x: torch.Tensor):
-        # Put all the kernels under one tensor (in order to use F.conv2d, allowing batches, easier autograd... etc.)
-        kernel_tensor = torch.empty((self.out_channels, self.in_channels//self.groups, self.kernels[0][0].size()[0], self.kernels[0][0].size()[1]), device=self.kernels[0][0].device)
-        for i in range(self.out_channels):
-            for j in range(self.in_channels//self.groups):
-                kernel_tensor[i][j] = self.kernels[j][i]
-        return F.conv2d(x, kernel_tensor, self.bias, stride=self.stride, padding=self.padding, dilation=self.dilation, groups=self.groups)
+        outputs = []
+        for idx,param in enumerate(self.neurons):
+            outputs.append(F.conv2d(x, param, self.bias[idx:idx+1],self.stride,self.padding,self.dilation,1))
+        out = torch.cat(outputs,dim=1)
+        return out
 
     def set_freezing_matrix(self, freezing_matrix):
         self.freezing_matrix = freezing_matrix

@@ -50,6 +50,10 @@ class Trainer():
             self.i = 0
         elif self.method == "velocity":
             self.model.neq_mode(False, torch.tensor(self.method_config["momentum"], device=device))
+        elif self.method == "gvelocity":
+            self.freeze = self.model.n_random_freezing_matrices(self.method_config["ratio"])
+            self.model.neq_mode(False, torch.tensor(self.method_config["momentum"], device=device))
+            print("Graph split in ",len(self.freeze))
 
         self.result_file = result_file
         print(self.device)
@@ -134,6 +138,23 @@ class Trainer():
                 self.model.set_freezing_matrix(matrix)
             elif 'eps' in self.method_config:
                 n_unfrozen = self.model.update_neq(self.method_config['eps'])
+            self.reset_optim()
+            return n_unfrozen
+        elif self.method == "gvelocity":
+            if epoch % self.method_config['epoch_change'] != 0:
+                return self.n_unfrozen
+            else:
+                print("Changing backward update scheme")
+            self.valid()
+            if self.optimizer.param_groups[0]['lr'] == 0.1:
+                i = randint(0, len(self.freeze)-1)
+                self.model.set_freezing_matrix(self.freeze[i][0])
+                self.reset_optim()
+                return self.freeze[i][1]
+            matrix, n_unfrozen, idx, vel = self.model.update_group_velocity(self.freeze)
+            self.model.set_freezing_matrix(matrix)
+            print("selected scheme n°{}".format(idx+1))
+            print(vel)
             self.reset_optim()
             return n_unfrozen
 
